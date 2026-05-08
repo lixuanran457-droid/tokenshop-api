@@ -7,6 +7,7 @@ import com.cococlaw.tokenshop.entity.ApiKey;
 import com.cococlaw.tokenshop.entity.Model;
 import com.cococlaw.tokenshop.mapper.ApiKeyMapper;
 import com.cococlaw.tokenshop.service.ModelService;
+import com.cococlaw.tokenshop.service.SysConfigService;
 import com.cococlaw.tokenshop.service.UserService;
 import com.cococlaw.tokenshop.service.UsageService;
 import com.cococlaw.tokenshop.utils.JwtUtil;
@@ -17,6 +18,7 @@ import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
@@ -55,6 +57,9 @@ public class ProxyController {
 
     @Autowired
     private RedisTemplate<String, Object> redisTemplate;
+
+    @Autowired
+    private SysConfigService sysConfigService;
 
     private final RestTemplate restTemplate = new RestTemplate();
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -187,9 +192,15 @@ public class ProxyController {
     }
 
     /**
-     * 调用上游API (需要根据不同模型厂商实现)
+     * 调用上游API (根据不同模型厂商实现)
      */
     private JsonNode callUpstreamApi(Model model, Map<String, Object> request) {
+        // 从配置获取 API 地址
+        String apiBaseUrl = sysConfigService.getValue("API_BASE_URL", "https://api.openai.com");
+        Integer apiTimeout = sysConfigService.getNumberValue("API_TIMEOUT", BigDecimal.valueOf(120)).intValue();
+        
+        log.debug("调用上游API，地址: {}, 模型: {}", apiBaseUrl, model.getModelId());
+        
         // TODO: 根据不同模型厂商调用不同的API
         // 这里返回模拟响应，实际生产需要实现真实的API调用
         
@@ -205,7 +216,7 @@ public class ProxyController {
         
         Map<String, Object> message = new HashMap<>();
         message.put("role", "assistant");
-        message.put("content", "这是来自COCO CLAW的模拟响应。实际调用时请配置上游API密钥。");
+        message.put("content", "这是来自COCO CLAW的模拟响应。请在管理后台配置 API_PROXY 地址和密钥后使用真实接口。");
         choice.put("message", message);
         
         choice.put("finish_reason", "stop");

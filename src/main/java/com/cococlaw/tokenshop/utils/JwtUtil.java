@@ -106,4 +106,69 @@ public class JwtUtil {
         Date expiration = claims.getExpiration();
         return expiration.before(new Date());
     }
+
+    // ==================== 管理员Token相关 ====================
+
+    /**
+     * 生成管理员Token
+     */
+    public String generateAdminToken(Long adminId, String username, String role) {
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("adminId", adminId);
+        claims.put("username", username);
+        claims.put("role", role);
+        claims.put("type", "admin");
+
+        Date now = new Date();
+        Date expirationDate = new Date(now.getTime() + expiration);
+
+        return Jwts.builder()
+                .setClaims(claims)
+                .setSubject(adminId.toString())
+                .setIssuedAt(now)
+                .setExpiration(expirationDate)
+                .signWith(SignatureAlgorithm.HS512, secret)
+                .compact();
+    }
+
+    /**
+     * 获取管理员ID
+     */
+    public Long getAdminIdFromToken(String token) {
+        Claims claims = parseToken(token);
+        if (claims == null) {
+            return null;
+        }
+        Object adminId = claims.get("adminId");
+        if (adminId == null) {
+            return null;
+        }
+        if (adminId instanceof Integer) {
+            return ((Integer) adminId).longValue();
+        }
+        return (Long) adminId;
+    }
+
+    /**
+     * 获取管理员角色
+     */
+    public String getAdminRoleFromToken(String token) {
+        Claims claims = parseToken(token);
+        if (claims == null) {
+            return null;
+        }
+        return (String) claims.get("role");
+    }
+
+    /**
+     * 验证是否为管理员Token
+     */
+    public boolean isAdminToken(String token) {
+        Claims claims = parseToken(token);
+        if (claims == null) {
+            return false;
+        }
+        Object type = claims.get("type");
+        return "admin".equals(type);
+    }
 }

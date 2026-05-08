@@ -40,6 +40,13 @@ public enum ResultCode {
     ORDER_PAID(708, "订单已支付"),
     ORDER_CANCELLED(709, "订单已取消"),
     
+    // 管理员错误 8xx
+    ADMIN_NOT_EXIST(801, "管理员不存在"),
+    USERNAME_OR_PASSWORD_ERROR(802, "用户名或密码错误"),
+    ACCOUNT_DISABLED(803, "账号已被禁用"),
+    TOKEN_EXPIRED(804, "Token已过期"),
+    TOKEN_INVALID(805, "Token无效"),
+
     // 服务端错误 5xx
     ERROR(500, "服务器内部错误"),
     SERVICE_UNAVAILABLE(503, "服务暂不可用");

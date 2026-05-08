@@ -7,6 +7,7 @@ import com.cococlaw.tokenshop.dto.*;
 import com.cococlaw.tokenshop.entity.User;
 import com.cococlaw.tokenshop.mapper.UserMapper;
 import com.cococlaw.tokenshop.service.AuthService;
+import com.cococlaw.tokenshop.service.SysConfigService;
 import com.cococlaw.tokenshop.utils.JwtUtil;
 import com.cococlaw.tokenshop.utils.PasswordUtil;
 import lombok.extern.slf4j.Slf4j;
@@ -15,6 +16,7 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.math.BigDecimal;
 import java.util.Random;
 import java.util.concurrent.TimeUnit;
 
@@ -36,6 +38,9 @@ public class AuthServiceImpl implements AuthService {
 
     @Autowired
     private PasswordUtil passwordUtil;
+
+    @Autowired
+    private SysConfigService sysConfigService;
 
     /**
      * 发送验证码
@@ -94,10 +99,20 @@ public class AuthServiceImpl implements AuthService {
             user = new User();
             user.setPhone(request.getPhone());
             user.setUsername("用户" + request.getPhone().substring(7));
-            user.setBalance(new java.math.BigDecimal("5.00")); // 新用户赠送5元
+            
+            // 从配置获取新用户赠送金额
+            BigDecimal bonus = sysConfigService.getNumberValue("NEW_USER_BONUS");
+            user.setBalance(bonus != null ? bonus : BigDecimal.ZERO);
+            
+            // 检查是否赠送免费Token额度
+            BigDecimal freeTokenQuota = sysConfigService.getNumberValue("FREE_TOKEN_QUOTA", BigDecimal.ZERO);
+            if (freeTokenQuota != null && freeTokenQuota.compareTo(BigDecimal.ZERO) > 0) {
+                log.info("新用户 {} 获得免费Token额度: {}", request.getPhone(), freeTokenQuota);
+            }
+            
             user.setStatus(1);
             userMapper.insert(user);
-            log.info("自动注册新用户: {}", request.getPhone());
+            log.info("自动注册新用户: {}, 赠送金额: {}", request.getPhone(), bonus);
         }
 
         // 检查用户状态
@@ -209,7 +224,17 @@ public class AuthServiceImpl implements AuthService {
 
         // 设置密码
         user.setPassword(passwordUtil.encode(request.getPassword()));
-        user.setBalance(new java.math.BigDecimal("5.00")); // 新用户赠送5元
+        
+        // 从配置获取新用户赠送金额
+        BigDecimal bonus = sysConfigService.getNumberValue("NEW_USER_BONUS");
+        user.setBalance(bonus != null ? bonus : BigDecimal.ZERO);
+        
+        // 检查是否赠送免费Token额度
+        BigDecimal freeTokenQuota = sysConfigService.getNumberValue("FREE_TOKEN_QUOTA", BigDecimal.ZERO);
+        if (freeTokenQuota != null && freeTokenQuota.compareTo(BigDecimal.ZERO) > 0) {
+            log.info("新注册用户获得免费Token额度: {}", freeTokenQuota);
+        }
+        
         user.setStatus(1);
 
         userMapper.insert(user);

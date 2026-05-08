@@ -2,6 +2,8 @@ package com.cococlaw.tokenshop.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.cococlaw.tokenshop.common.BusinessException;
 import com.cococlaw.tokenshop.common.ResultCode;
 import com.cococlaw.tokenshop.dto.CreateOrderRequest;
@@ -23,6 +25,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -139,6 +142,17 @@ public class OrderServiceImpl implements OrderService {
     }
 
     /**
+     * 获取订单实体
+     */
+    @Override
+    public Order getOrderByNoEntity(String orderNo) {
+        return orderMapper.selectOne(
+            new LambdaQueryWrapper<Order>()
+                .eq(Order::getOrderNo, orderNo)
+        );
+    }
+
+    /**
      * 支付订单
      */
     @Override
@@ -193,34 +207,86 @@ public class OrderServiceImpl implements OrderService {
         // 获取套餐信息
         Package pkg = packageMapper.selectById(order.getPackageId());
         BigDecimal totalAmount = order.getActualAmount();
-        if (pkg.getBonus() != null && pkg.getBonus().compareTo(BigDecimal.ZERO) > 0) {
+        if (pkg != null && pkg.getBonus() != null && pkg.getBonus().compareTo(BigDecimal.ZERO) > 0) {
             totalAmount = totalAmount.add(pkg.getBonus());
         }
 
         // 更新用户余额
         User user = userMapper.selectById(order.getUserId());
-        BigDecimal balanceBefore = user.getBalance();
-        BigDecimal balanceAfter = balanceBefore.add(totalAmount);
+        if (user != null) {
+            BigDecimal balanceBefore = user.getBalance();
+            BigDecimal balanceAfter = balanceBefore.add(totalAmount);
 
-        userMapper.update(null,
-            new LambdaUpdateWrapper<User>()
-                .eq(User::getId, order.getUserId())
-                .set(User::getBalance, balanceAfter)
-                .set(User::getTotalRecharge, user.getTotalRecharge().add(order.getActualAmount()))
+            userMapper.update(null,
+                new LambdaUpdateWrapper<User>()
+                    .eq(User::getId, order.getUserId())
+                    .set(User::getBalance, balanceAfter)
+                    .set(User::getTotalRecharge, user.getTotalRecharge().add(order.getActualAmount()))
+            );
+
+            // 添加充值交易记录
+            Transaction transaction = new Transaction();
+            transaction.setUserId(order.getUserId());
+            transaction.setType("recharge");
+            transaction.setAmount(order.getActualAmount());
+            transaction.setBalanceBefore(balanceBefore);
+            transaction.setBalanceAfter(balanceAfter);
+            transaction.setDescription("充值: " + order.getPackageName());
+            transaction.setOrderNo(orderNo);
+            transaction.setCreateTime(LocalDateTime.now());
+            transactionMapper.insert(transaction);
+
+            log.info("订单{}支付成功，用户{}余额更新: {} -> {}", orderNo, order.getUserId(), balanceBefore, balanceAfter);
+        }
+    }
+
+    // ==================== 管理员方法 ====================
+
+    @Override
+    public List<Order> getAdminOrderList(String status, String keyword, Integer page, Integer pageSize) {
+        LambdaQueryWrapper<Order> wrapper = new LambdaQueryWrapper<>();
+
+        if (StringUtils.hasText(status)) {
+            wrapper.eq(Order::getPayStatus, status);
+        }
+
+        wrapper.orderByDesc(Order::getCreateTime);
+
+        IPage<Order> result = orderMapper.selectPage(new Page<>(page, pageSize), wrapper);
+        return result.getRecords();
+    }
+
+    @Override
+    public Long getOrderCount(String status) {
+        LambdaQueryWrapper<Order> wrapper = new LambdaQueryWrapper<>();
+
+        if (StringUtils.hasText(status)) {
+            wrapper.eq(Order::getPayStatus, status);
+        }
+
+        return orderMapper.selectCount(wrapper);
+    }
+
+    @Override
+    @Transactional
+    public void cancelOrder(String orderNo) {
+        orderMapper.update(null,
+            new LambdaUpdateWrapper<Order>()
+                .eq(Order::getOrderNo, orderNo)
+                .eq(Order::getPayStatus, "pending")
+                .set(Order::getPayStatus, "cancelled")
         );
+        log.info("取消订单: {}", orderNo);
+    }
 
-        // 添加充值交易记录
-        Transaction transaction = new Transaction();
-        transaction.setUserId(order.getUserId());
-        transaction.setType("recharge");
-        transaction.setAmount(order.getActualAmount());
-        transaction.setBalanceBefore(balanceBefore);
-        transaction.setBalanceAfter(balanceAfter);
-        transaction.setDescription("充值: " + order.getPackageName());
-        transaction.setOrderNo(orderNo);
-        transactionMapper.insert(transaction);
-
-        log.info("订单{}支付成功，用户{}余额更新: {} -> {}", orderNo, order.getUserId(), balanceBefore, balanceAfter);
+    @Override
+    @Transactional
+    public void deleteOrder(String orderNo) {
+        orderMapper.delete(
+            new LambdaQueryWrapper<Order>()
+                .eq(Order::getOrderNo, orderNo)
+        );
+        log.info("删除订单: {}", orderNo);
     }
 
     /**
@@ -229,7 +295,7 @@ public class OrderServiceImpl implements OrderService {
     private PayResponse generatePayUrl(String orderNo, String payType, BigDecimal amount) {
         // TODO: 实际对接微信支付、支付宝支付接口
         // 这里返回模拟数据，实际生产需要调用第三方支付SDK
-        
+
         if ("wechat".equals(payType)) {
             // 返回微信支付二维码链接
             String qrCode = "weixin://wxpay/bizpayurl?pr=" + orderNo;
@@ -246,7 +312,7 @@ public class OrderServiceImpl implements OrderService {
                     .payUrl(payUrl)
                     .build();
         }
-        
+
         return PayResponse.builder()
                 .orderNo(orderNo)
                 .build();

@@ -72,88 +72,49 @@ public class AuthServiceImpl implements AuthService {
     }
 
     /**
-     * 手机号+验证码登录
+     * 统一登录接口
+     * 支持密码登录和验证码登录两种方式
      */
     @Override
-    public AuthResponse phoneLogin(PhoneLoginRequest request) {
-        // 验证验证码
-        String key = "verify_code:" + request.getPhone() + ":login";
-        String cachedCode = (String) redisTemplate.opsForValue().get(key);
+    public AuthResponse login(LoginRequest request) {
+        User user = null;
         
-        if (!request.getCode().equals(cachedCode)) {
-            throw new BusinessException(ResultCode.VERIFY_CODE_ERROR);
+        // 根据账号类型查询用户
+        if ("phone".equals(request.getAccountType())) {
+            user = userMapper.selectOne(
+                new LambdaQueryWrapper<User>()
+                    .eq(User::getPhone, request.getAccount())
+                    .eq(User::getDeleted, 0)
+            );
+        } else if ("email".equals(request.getAccountType())) {
+            user = userMapper.selectOne(
+                new LambdaQueryWrapper<User>()
+                    .eq(User::getEmail, request.getAccount())
+                    .eq(User::getDeleted, 0)
+            );
         }
         
-        // 删除已使用的验证码
-        redisTemplate.delete(key);
-
-        // 查询用户
-        User user = userMapper.selectOne(
-            new LambdaQueryWrapper<User>()
-                .eq(User::getPhone, request.getPhone())
-                .eq(User::getDeleted, 0)
-        );
-
-        // 如果用户不存在，自动注册
         if (user == null) {
-            user = new User();
-            user.setPhone(request.getPhone());
-            user.setUsername("用户" + request.getPhone().substring(7));
-            
-            // 从配置获取新用户赠送金额
-            BigDecimal bonus = sysConfigService.getNumberValue("NEW_USER_BONUS");
-            user.setBalance(bonus != null ? bonus : BigDecimal.ZERO);
-            
-            // 检查是否赠送免费Token额度
-            BigDecimal freeTokenQuota = sysConfigService.getNumberValue("FREE_TOKEN_QUOTA", BigDecimal.ZERO);
-            if (freeTokenQuota != null && freeTokenQuota.compareTo(BigDecimal.ZERO) > 0) {
-                log.info("新用户 {} 获得免费Token额度: {}", request.getPhone(), freeTokenQuota);
+            throw new BusinessException(ResultCode.USER_NOT_EXIST);
+        }
+
+        // 密码登录
+        if ("password".equals(request.getLoginType())) {
+            if (!passwordUtil.matches(request.getPassword(), user.getPassword())) {
+                throw new BusinessException(ResultCode.PASSWORD_ERROR);
             }
+        }
+        // 验证码登录
+        else if ("code".equals(request.getLoginType())) {
+            // 验证验证码
+            String key = "verify_code:" + request.getAccount() + ":login";
+            String cachedCode = (String) redisTemplate.opsForValue().get(key);
             
-            user.setStatus(1);
-            userMapper.insert(user);
-            log.info("自动注册新用户: {}, 赠送金额: {}", request.getPhone(), bonus);
-        }
-
-        // 检查用户状态
-        if (user.getStatus() == 0) {
-            throw new BusinessException(ResultCode.USER_DISABLED);
-        }
-
-        // 生成Token
-        String token = jwtUtil.generateToken(user.getId(), user.getPhone(), user.getEmail());
-
-        return AuthResponse.builder()
-                .accessToken(token)
-                .tokenType("Bearer")
-                .expiresIn(jwtUtil.getExpiration())
-                .userId(user.getId())
-                .username(user.getUsername())
-                .phone(user.getPhone())
-                .email(user.getEmail())
-                .balance(user.getBalance())
-                .build();
-    }
-
-    /**
-     * 邮箱+密码登录
-     */
-    @Override
-    public AuthResponse emailLogin(EmailLoginRequest request) {
-        // 查询用户
-        User user = userMapper.selectOne(
-            new LambdaQueryWrapper<User>()
-                .eq(User::getEmail, request.getEmail())
-                .eq(User::getDeleted, 0)
-        );
-
-        if (user == null) {
-            throw new BusinessException(ResultCode.EMAIL_NOT_EXIST);
-        }
-
-        // 验证密码
-        if (!passwordUtil.matches(request.getPassword(), user.getPassword())) {
-            throw new BusinessException(ResultCode.PASSWORD_ERROR);
+            if (!request.getCode().equals(cachedCode)) {
+                throw new BusinessException(ResultCode.VERIFY_CODE_ERROR);
+            }
+            // 删除已使用的验证码
+            redisTemplate.delete(key);
         }
 
         // 检查用户状态
@@ -178,6 +139,7 @@ public class AuthServiceImpl implements AuthService {
 
     /**
      * 注册
+     * 注册时需要密码
      */
     @Override
     public AuthResponse register(RegisterRequest request) {

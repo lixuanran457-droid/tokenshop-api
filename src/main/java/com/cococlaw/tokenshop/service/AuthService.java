@@ -13,17 +13,14 @@ public interface AuthService {
     void sendCode(String phoneOrEmail, String type);
 
     /**
-     * 手机号+验证码登录
+     * 统一登录接口
+     * 支持密码登录和验证码登录两种方式
      */
-    AuthResponse phoneLogin(PhoneLoginRequest request);
-
-    /**
-     * 邮箱+密码登录
-     */
-    AuthResponse emailLogin(EmailLoginRequest request);
+    AuthResponse login(LoginRequest request);
 
     /**
      * 注册
+     * 注册时需要密码
      */
     AuthResponse register(RegisterRequest request);
 }

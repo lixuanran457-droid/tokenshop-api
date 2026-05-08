@@ -35,27 +35,19 @@ public class AuthController {
     }
 
     /**
-     * 手机号登录
+     * 统一登录接口
+     * 支持密码登录和验证码登录两种方式
      */
-    @ApiOperation("手机号登录")
-    @PostMapping("/login/phone")
-    public Result<AuthResponse> phoneLogin(@RequestBody @Validated PhoneLoginRequest request) {
-        AuthResponse response = authService.phoneLogin(request);
-        return Result.success(response);
-    }
-
-    /**
-     * 邮箱登录
-     */
-    @ApiOperation("邮箱登录")
-    @PostMapping("/login/email")
-    public Result<AuthResponse> emailLogin(@RequestBody @Validated EmailLoginRequest request) {
-        AuthResponse response = authService.emailLogin(request);
+    @ApiOperation("用户登录（支持密码/验证码两种方式）")
+    @PostMapping("/login")
+    public Result<AuthResponse> login(@RequestBody @Validated LoginRequest request) {
+        AuthResponse response = authService.login(request);
         return Result.success(response);
     }
 
     /**
      * 注册
+     * 注册时需要密码
      */
     @ApiOperation("用户注册")
     @PostMapping("/register")
